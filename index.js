@@ -32,7 +32,7 @@ async function logActivity(message) {
 // Function to get new TidyCal bookings
 async function getNewBookings() {
     try {
-        const response = await axios.get('https://api.tidycal.com/bookings', {
+        const response = await axios.get('https://tidycal.com/api/bookings', {
             headers: {
                 'Authorization': `Bearer ${CONFIG.TIDYCAL_API_KEY}`,
                 'Content-Type': 'application/json'
