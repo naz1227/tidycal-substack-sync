@@ -11,12 +11,39 @@ const CONFIG = {
     SUBSTACK_URL: 'https://studiogrowth.substack.com',
     CHECK_INTERVAL: 5 * 60 * 1000, // 5 minutes
     LOG_FILE: 'sync_log.txt',
+    PROCESSED_BOOKINGS_FILE: 'processed_bookings.json', // Track processed bookings
     // GDPR COMPLIANCE: Only process bookings created after this timestamp
     AUTOMATION_START_TIME: new Date('2025-07-26T21:42:00Z')
 };
 
-// Store last check time
+// Store last check time and processed bookings
 let lastCheckTime = new Date();
+let processedBookingIds = new Set();
+
+// Load previously processed booking IDs to prevent re-processing
+async function loadProcessedBookings() {
+    try {
+        const data = await fs.readFile(CONFIG.PROCESSED_BOOKINGS_FILE, 'utf8');
+        const bookingIds = JSON.parse(data);
+        processedBookingIds = new Set(bookingIds);
+        await logActivity(`Loaded ${processedBookingIds.size} previously processed booking IDs`);
+    } catch (error) {
+        // File doesn't exist yet, start with empty set
+        processedBookingIds = new Set();
+        await logActivity('No previous booking history found - starting fresh');
+    }
+}
+
+// Save processed booking IDs to prevent re-processing
+async function saveProcessedBooking(bookingId) {
+    try {
+        processedBookingIds.add(bookingId.toString());
+        const bookingArray = Array.from(processedBookingIds);
+        await fs.writeFile(CONFIG.PROCESSED_BOOKINGS_FILE, JSON.stringify(bookingArray, null, 2));
+    } catch (error) {
+        await logActivity(`Error saving processed booking ID: ${error.message}`);
+    }
+}
 
 // Function to log activities
 async function logActivity(message) {
@@ -34,15 +61,13 @@ async function logActivity(message) {
 // Function to get new TidyCal bookings
 async function getNewBookings() {
     try {
+        // Try without date filter first to test API connectivity
         const response = await axios.get('https://tidycal.com/api/bookings', {
             headers: {
                 'Authorization': `Bearer ${CONFIG.TIDYCAL_API_KEY}`,
                 'Content-Type': 'application/json'
-            },
-            params: {
-                // GDPR SAFETY: Only get bookings from today forward
-                starts_at: new Date().toISOString().split('T')[0]  // Format: 2025-07-26
             }
+            // Remove date parameters for now to fix 422 error
         });
 
         return response.data.data || [];
@@ -109,47 +134,51 @@ async function syncBookingsToSubstack() {
         return;
     }
 
-    // GDPR CRITICAL: Only process bookings created AFTER automation started
+    // GDPR CRITICAL: Only process bookings created AFTER automation started AND not already processed
     const gdprCompliantBookings = allBookings.filter(booking => {
         const bookingCreatedAt = new Date(booking.created_at);
         const isNewBooking = bookingCreatedAt > CONFIG.AUTOMATION_START_TIME;
+        const notAlreadyProcessed = !processedBookingIds.has(booking.id.toString());
         
         if (!isNewBooking) {
-            // Log skipped bookings for transparency
-            logActivity(`⚠️  GDPR SKIP: ${booking.contact.name} (${booking.contact.email}) - created before automation start`);
+            // Log skipped bookings for transparency (but don't spam logs)
+            return false;
         }
         
-        return isNewBooking;
+        if (!notAlreadyProcessed) {
+            // Already processed this booking
+            return false;
+        }
+        
+        return true;
     });
 
-    await logActivity(`Found ${allBookings.length} total booking(s), processing ${gdprCompliantBookings.length} new booking(s)`);
+    await logActivity(`Found ${allBookings.length} total booking(s), ${gdprCompliantBookings.length} are new and unprocessed`);
 
     if (gdprCompliantBookings.length === 0) {
-        await logActivity('No new bookings to process (all were created before automation started)');
+        await logActivity('No new unprocessed bookings found');
         return;
     }
 
-    // Process only the GDPR-compliant new bookings
+    // Process only the truly new, unprocessed bookings
     for (const booking of gdprCompliantBookings) {
         const { contact } = booking;
         const email = contact.email;
         const name = contact.name;
+        const bookingId = booking.id;
         const bookingCreatedAt = new Date(booking.created_at);
 
-        await logActivity(`✅ Processing NEW booking: ${name} (${email}) - created: ${bookingCreatedAt.toISOString()}`);
-
-        // Double-check this is truly a new booking (extra safety)
-        if (bookingCreatedAt <= CONFIG.AUTOMATION_START_TIME) {
-            await logActivity(`🛑 SAFETY STOP: Booking ${email} created before automation - SKIPPING for GDPR compliance`);
-            continue;
-        }
+        await logActivity(`✅ Processing NEW booking ID ${bookingId}: ${name} (${email}) - created: ${bookingCreatedAt.toISOString()}`);
 
         const success = await subscribeToSubstack(email, name);
         
         if (success) {
             await logActivity(`✅ Successfully added ${email} to Substack newsletter`);
+            // Mark as processed so we never process it again
+            await saveProcessedBooking(bookingId);
         } else {
-            await logActivity(`❌ Failed to add ${email} to Substack newsletter`);
+            await logActivity(`❌ Failed to add ${email} to Substack newsletter - will retry next sync`);
+            // Don't mark as processed if it failed, so we can retry
         }
 
         // Small delay between requests to be respectful
@@ -158,7 +187,7 @@ async function syncBookingsToSubstack() {
 
     // Update last check time
     lastCheckTime = new Date();
-    await logActivity(`GDPR-compliant sync completed. Processed ${gdprCompliantBookings.length} new bookings. Next check in ${CONFIG.CHECK_INTERVAL / 60000} minutes.`);
+    await logActivity(`GDPR-compliant sync completed. Processed ${gdprCompliantBookings.length} new bookings. Total processed ever: ${processedBookingIds.size}. Next check in ${CONFIG.CHECK_INTERVAL / 60000} minutes.`);
 }
 
 // Start the periodic sync
@@ -205,10 +234,13 @@ app.get('/gdpr', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`TidyCal-Substack sync running on port ${PORT}`);
-    logActivity('🚀 GDPR-Compliant TidyCal-Substack automation started');
-    logActivity(`⚖️  GDPR: Only processing bookings created after ${CONFIG.AUTOMATION_START_TIME.toISOString()}`);
+    await logActivity('🚀 GDPR-Compliant TidyCal-Substack automation started');
+    await logActivity(`⚖️  GDPR: Only processing bookings created after ${CONFIG.AUTOMATION_START_TIME.toISOString()}`);
+    
+    // Load previously processed bookings to prevent re-processing
+    await loadProcessedBookings();
     
     // Run initial sync after 5 seconds
     setTimeout(syncBookingsToSubstack, 5000);
