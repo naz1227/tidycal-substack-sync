@@ -37,9 +37,7 @@ async function getNewBookings() {
                 'Authorization': `Bearer ${CONFIG.TIDYCAL_API_KEY}`,
                 'Content-Type': 'application/json'
             },
-            params: {
-                starts_at: lastCheckTime.toISOString()
-            }
+            // Remove params temporarily to test basic API connectivity
         });
 
         return response.data.data || [];
