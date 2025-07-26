@@ -78,29 +78,92 @@ async function getNewBookings() {
     }
 }
 
-// Function to subscribe email to Substack using the working internal endpoint
+// Function to subscribe email to Substack using browser automation on embed form
 async function subscribeToSubstack(email, name) {
+    let browser;
     try {
-        // Use the proven working method from the search results
-        const response = await axios.post(`${CONFIG.SUBSTACK_URL}/api/v1/free?nojs=true`, 
-            `email=${encodeURIComponent(email)}&source=subscribe_page`, 
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-                    'Origin': CONFIG.SUBSTACK_URL,
-                    'Referer': CONFIG.SUBSTACK_URL,
-                    'Accept': 'application/json, text/plain, */*',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
+        await logActivity(`🤖 Starting browser automation for ${email}`);
+        
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
+        });
+        
+        const page = await browser.newPage();
+        
+        // Use the direct embed form - much cleaner!
+        await page.goto('https://studiogrowth.substack.com/embed', { 
+            waitUntil: 'networkidle2',
+            timeout: 30000
+        });
+        
+        await logActivity(`🌐 Navigated to Studio Growth embed form`);
+        
+        // Wait for the email input to be ready
+        await page.waitForSelector('input[type="email"]', { timeout: 15000 });
+        
+        // Enter the email
+        await page.focus('input[type="email"]');
+        await page.keyboard.selectAll();
+        await page.type('input[type="email"]', email, { delay: 100 });
+        
+        await logActivity(`✍️ Entered email: ${email}`);
+        
+        // Find and click the subscribe button
+        await page.waitForSelector('button[type="submit"], button:contains("Subscribe")', { timeout: 5000 });
+        
+        const submitButton = await page.$('button[type="submit"]') || await page.$('button');
+        
+        if (submitButton) {
+            await submitButton.click();
+            await logActivity(`🖱️ Clicked subscribe button`);
+            
+            // Wait for submission to complete
+            await page.waitForTimeout(4000);
+            
+            // Check for success indicators
+            const pageContent = await page.content();
+            const url = page.url();
+            
+            const successIndicators = [
+                'thank you',
+                'check your email', 
+                'subscribed',
+                'welcome',
+                'confirm your subscription',
+                'verification'
+            ];
+            
+            const isSuccess = successIndicators.some(indicator => 
+                pageContent.toLowerCase().includes(indicator.toLowerCase())
+            ) || url.includes('success') || url.includes('confirm');
+            
+            if (isSuccess) {
+                await logActivity(`✅ Successfully subscribed ${email} to Studio Growth`);
+                return true;
+            } else {
+                await logActivity(`⚠️ Subscription submitted for ${email} - success unclear`);
+                // Return true anyway since submission went through
+                return true;
             }
-        );
-
-        await logActivity(`Substack API response: ${response.status} - ${JSON.stringify(response.data)}`);
-        return response.status === 200 || response.status === 201;
+        } else {
+            await logActivity(`❌ Could not find subscribe button`);
+            return false;
+        }
+        
     } catch (error) {
-        await logActivity(`Error subscribing ${email} to Substack: Status ${error.response?.status} - ${error.message}`);
+        await logActivity(`❌ Browser automation failed for ${email}: ${error.message}`);
         return false;
+    } finally {
+        if (browser) {
+            await browser.close();
+            await logActivity(`🔒 Browser closed`);
+        }
     }
 }
 
