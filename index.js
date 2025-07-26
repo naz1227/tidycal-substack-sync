@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs').promises;
-const puppeteer = require('puppeteer'); 
+const puppeteer = require('puppeteer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,7 +14,7 @@ const CONFIG = {
     LOG_FILE: 'sync_log.txt',
     PROCESSED_BOOKINGS_FILE: 'processed_bookings.json', // Track processed bookings
     // GDPR COMPLIANCE: Only process bookings created after this timestamp
-    AUTOMATION_START_TIME: new Date('2025-07-26T21:42:00Z')
+    AUTOMATION_START_TIME: new Date('2025-07-26T21:00:00Z')
 };
 
 // Store last check time and processed bookings
@@ -244,7 +244,8 @@ app.get('/', (req, res) => {
         lastCheck: lastCheckTime,
         nextCheck: new Date(Date.now() + CONFIG.CHECK_INTERVAL),
         automationStartTime: CONFIG.AUTOMATION_START_TIME,
-        gdprCompliant: true
+        gdprCompliant: true,
+        totalProcessed: processedBookingIds.size
     });
 });
 
@@ -272,15 +273,16 @@ app.get('/gdpr', (req, res) => {
         automationStartTime: CONFIG.AUTOMATION_START_TIME,
         policy: 'This automation only processes bookings created AFTER the automation start time',
         dataProcessed: 'Email addresses and names from NEW TidyCal bookings only',
-        purpose: 'Adding new subscribers to Substack newsletter',
+        purpose: 'Adding new subscribers to Substack newsletter via browser automation',
         retention: 'Data is not stored, only passed through to Substack',
-        rights: 'Users can unsubscribe from Substack directly'
+        rights: 'Users can unsubscribe from Substack directly',
+        totalProcessed: processedBookingIds.size
     });
 });
 
 app.listen(PORT, async () => {
     console.log(`TidyCal-Substack sync running on port ${PORT}`);
-    await logActivity('🚀 GDPR-Compliant TidyCal-Substack automation started');
+    await logActivity('🚀 GDPR-Compliant TidyCal-Substack automation started with browser automation');
     await logActivity(`⚖️  GDPR: Only processing bookings created after ${CONFIG.AUTOMATION_START_TIME.toISOString()}`);
     
     // Load previously processed bookings to prevent re-processing
