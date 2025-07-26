@@ -77,13 +77,13 @@ async function getNewBookings() {
     }
 }
 
-// Function to subscribe email to Substack
+// Function to subscribe email to Substack using the correct internal endpoint
 async function subscribeToSubstack(email, name) {
     try {
-        // Try the correct Substack API endpoint
+        // Method 1: Try the internal subscription endpoint that Substack forms use
         const response = await axios.post(`${CONFIG.SUBSTACK_URL}/api/v1/subscribe`, {
             email: email,
-            name: name || '',
+            domain: 'studiogrowth.substack.com',
             first_url: CONFIG.SUBSTACK_URL,
             first_referrer: '',
             current_url: CONFIG.SUBSTACK_URL,
@@ -93,31 +93,32 @@ async function subscribeToSubstack(email, name) {
         }, {
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (compatible; TidyCal-Substack-Integration)',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Origin': CONFIG.SUBSTACK_URL,
-                'Referer': CONFIG.SUBSTACK_URL
+                'Referer': CONFIG.SUBSTACK_URL,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             }
         });
 
         return response.status === 200 || response.status === 201;
     } catch (error) {
-        // If first method fails, try alternative endpoint
+        // Method 2: Try alternative endpoint structure
         try {
-            const altResponse = await axios.post(`${CONFIG.SUBSTACK_URL}/api/v1/free`, {
+            const altResponse = await axios.post(`${CONFIG.SUBSTACK_URL}/subscribe`, {
                 email: email,
-                name: name || '',
-                source: 'embed'
+                domain: 'studiogrowth.substack.com'
             }, {
                 headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (compatible; TidyCal-Substack-Integration)',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Origin': CONFIG.SUBSTACK_URL,
                     'Referer': CONFIG.SUBSTACK_URL
                 }
             });
             return altResponse.status === 200 || altResponse.status === 201;
         } catch (altError) {
-            await logActivity(`Error subscribing ${email} to Substack: ${error.message} | Alt method: ${altError.message}`);
+            await logActivity(`Error subscribing ${email} to Substack: Primary: ${error.response?.status} ${error.message} | Alt: ${altError.response?.status} ${altError.message}`);
             return false;
         }
     }
