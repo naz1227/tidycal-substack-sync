@@ -77,50 +77,29 @@ async function getNewBookings() {
     }
 }
 
-// Function to subscribe email to Substack using the correct internal endpoint
+// Function to subscribe email to Substack using the working internal endpoint
 async function subscribeToSubstack(email, name) {
     try {
-        // Method 1: Try the internal subscription endpoint that Substack forms use
-        const response = await axios.post(`${CONFIG.SUBSTACK_URL}/api/v1/subscribe`, {
-            email: email,
-            domain: 'studiogrowth.substack.com',
-            first_url: CONFIG.SUBSTACK_URL,
-            first_referrer: '',
-            current_url: CONFIG.SUBSTACK_URL,
-            current_referrer: '',
-            referral_code: '',
-            source: 'embed'
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Origin': CONFIG.SUBSTACK_URL,
-                'Referer': CONFIG.SUBSTACK_URL,
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-
-        return response.status === 200 || response.status === 201;
-    } catch (error) {
-        // Method 2: Try alternative endpoint structure
-        try {
-            const altResponse = await axios.post(`${CONFIG.SUBSTACK_URL}/subscribe`, {
-                email: email,
-                domain: 'studiogrowth.substack.com'
-            }, {
+        // Use the proven working method from the search results
+        const response = await axios.post(`${CONFIG.SUBSTACK_URL}/api/v1/free?nojs=true`, 
+            `email=${encodeURIComponent(email)}&source=subscribe_page`, 
+            {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
                     'Origin': CONFIG.SUBSTACK_URL,
-                    'Referer': CONFIG.SUBSTACK_URL
+                    'Referer': CONFIG.SUBSTACK_URL,
+                    'Accept': 'application/json, text/plain, */*',
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
-            });
-            return altResponse.status === 200 || altResponse.status === 201;
-        } catch (altError) {
-            await logActivity(`Error subscribing ${email} to Substack: Primary: ${error.response?.status} ${error.message} | Alt: ${altError.response?.status} ${altError.message}`);
-            return false;
-        }
+            }
+        );
+
+        await logActivity(`Substack API response: ${response.status} - ${JSON.stringify(response.data)}`);
+        return response.status === 200 || response.status === 201;
+    } catch (error) {
+        await logActivity(`Error subscribing ${email} to Substack: Status ${error.response?.status} - ${error.message}`);
+        return false;
     }
 }
 
