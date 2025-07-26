@@ -1,6 +1,6 @@
 {
   "name": "tidycal-substack-sync",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "Sync TidyCal bookings to Substack",
   "main": "index.js",
   "scripts": {
@@ -9,6 +9,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.6.0",
-    "playwright": "^1.40.0"
+    "puppeteer": "^21.0.0"
   }
 }
